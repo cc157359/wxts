@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>温暖提示</title>
+    <style>
+        :root {
+            --tip-width: 250px;
+            --tip-height: 60px;
+            --star-color: #fffacd; 
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f0f0f0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            overflow: hidden; 
+            position: relative;
+        }
+
+        /* --- 星星坠落动画 --- */
+        .star {
+            position: absolute;
+            top: 0;
+            left: 0;
+            background-color: var(--star-color);
+            border-radius: 50%;
+            pointer-events: none;
+            opacity: 0;
+            animation: fall linear infinite;
+            z-index: 500;
+        }
+
+        @keyframes fall {
+            0% { transform: translateY(-10vh) translateX(0); opacity: 0.8; }
+            100% { transform: translateY(105vh) translateX(50px); opacity: 0; }
+        }
+
+        /* --- 礼盒动画 --- */
+        @keyframes pulse {
+            0% { transform: scale(1); box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2); }
+            50% { transform: scale(1.05); box-shadow: 0 15px 30px rgba(255, 107, 107, 0.5); }
+            100% { transform: scale(1); box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2); }
+        }
+
+        #giftBox {
+            cursor: pointer;
+            text-align: center;
+            width: 120px;
+            height: 120px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: linear-gradient(145deg, #ff6b6b, #ee5253); 
+            border-radius: 50%; 
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+            animation: pulse 2s infinite ease-in-out; 
+            transition: opacity 0.3s, transform 0.3s;
+            z-index: 1000; 
+        }
+
+        #giftBox-icon {
+            font-size: 60px;
+            color: white;
+            text-shadow: 0 0 5px rgba(0, 0, 0, 0.3);
+        }
+
+        /* --- 炸开碎片特效 --- */
+        .explosion-particle {
+            position: absolute;
+            width: 8px;
+            height: 8px;
+            background-color: #ff6b6b; 
+            border-radius: 50%;
+            opacity: 1;
+            z-index: 1500;
+            pointer-events: none;
+            transition: all 1s cubic-bezier(0, 0.9, 0.5, 1.2); 
+        }
+
+        /* --- 弹窗样式 --- */
+        .tip-window {
+            position: absolute;
+            width: var(--tip-width);
+            height: var(--tip-height); 
+            padding: 10px 15px;
+            border-radius: 5px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+            color: #333;
+            border: 1px solid rgba(255, 255, 255, 0.5);
+            backdrop-filter: blur(3px); 
+            opacity: 0; 
+            transform: scale(0.8); 
+            transition: opacity 0.5s ease-out, transform 0.5s ease-out; 
+            z-index: 1; 
+            box-sizing: border-box;
+        }
+
+        .tip-window.show {
+            opacity: 1; 
+            transform: scale(1); 
+            z-index: 50; 
+        }
+        
+        /* 移除最旧的弹窗时使用的退出动画 */
+        .tip-window.fade-out {
+            opacity: 0;
+            transform: scale(0.5);
+            transition: opacity 0.3s linear, transform 0.3s linear;
+        }
+
+        .tip-header {
+            font-weight: bold;
+            font-size: 14px;
+            margin-bottom: 2px;
+            color: #4a4a4a;
+        }
+
+        .tip-content {
+            font-size: 16px;
+            overflow: hidden;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+        }
+    </style>
+</head>
+<body>
+    
+    <audio id="bgMusic" src="bg_music.mp3" preload="auto" loop></audio> 
+
+    <div id="star-container"></div>
+    <div id="giftBox">
+        <span id="giftBox-icon">🎁</span>
+    </div>
+    <div id="explosion-container"></div>
+    <div id="tip-container"></div>
+
+    <script>
+        // 提示语列表 
+        const tips = [
+            '多喝水哦~', '保持微笑哦', '每天都要元气满满', '我想你了', 
+            '梦想成真', '保持好心情', '好好爱自己', '金榜题名', 
+            '顺顺利利', '早点休息', '愿所有烦恼都消失', '别熬夜', 
+            '今天过得开心嘛', '天冷了，多穿衣服', '期待下一次见面',
+            '记得吃水果', '今天也要加油鸭', '常想一二，不思八九',
+            '要开心，要自信'
+        ];
+
+        // 随机颜色列表 
+        const colors = [
+            '#FFB6C1', '#87CEEB', '#90EE90', '#E6E6FA', '#FFDAB9', '#FFA07A', 
+            '#F08080', '#ADD8E6', '#FFE4B5', '#CCCCFF', '#C1FFC1'
+        ];
+
+        const giftBox = document.getElementById('giftBox');
+        const tipContainer = document.getElementById('tip-container');
+        const starContainer = document.getElementById('star-container');
+        const explosionContainer = document.getElementById('explosion-container');
+        const bgMusic = document.getElementById('bgMusic'); // 获取音频元素
+
+        const MAX_TIPS_COUNT = 60; 
+        const INTERVAL_MS = 100;   
+
+        let windowGenerationInterval = null;
+        let currentTipsCount = 0; 
+
+        function getRandomElement(arr) {
+            return arr[Math.floor(Math.random() * arr.length)];
+        }
+        
+        // --- 特效函数 (保持不变) ---
+
+        function createStars() {
+            const NUM_STARS = 30; 
+            for (let i = 0; i < NUM_STARS; i++) {
+                const star = document.createElement('div');
+                star.className = 'star';
+                
+                const size = Math.random() * 5 + 2; 
+                star.style.width = star.style.height = `${size}px`;
+                
+                star.style.left = `${Math.random() * 100}vw`;
+                star.style.animationDuration = `${Math.random() * 3 + 5}s`; 
+                star.style.animationDelay = `${Math.random() * 5}s`; 
+                
+                starContainer.appendChild(star);
+            }
+        }
+        
+        function explode(centerX, centerY) {
+            const NUM_PARTICLES = 40; 
+            for (let i = 0; i < NUM_PARTICLES; i++) {
+                const particle = document.createElement('div');
+                particle.className = 'explosion-particle';
+                explosionContainer.appendChild(particle);
+
+                particle.style.left = `${centerX}px`;
+                particle.style.top = `${centerY}px`;
+
+                const angle = Math.random() * 2 * Math.PI;
+                const distance = Math.random() * 150 + 50; 
+                const endX = centerX + distance * Math.cos(angle);
+                const endY = centerY + distance * Math.sin(angle);
+
+                setTimeout(() => {
+                    particle.style.transform = `translate(${endX - centerX}px, ${endY - centerY}px)`;
+                    particle.style.opacity = 0;
+                }, 50); 
+                
+                particle.addEventListener('transitionend', () => {
+                    particle.remove();
+                }, { once: true });
+            }
+        }
+
+        // --- 弹窗循环逻辑 (保持不变) ---
+
+        function removeOldestTip() {
+            const oldestTip = tipContainer.firstElementChild;
+            if (oldestTip) {
+                oldestTip.classList.add('fade-out');
+
+                oldestTip.addEventListener('transitionend', function() {
+                    oldestTip.remove();
+                    currentTipsCount--; 
+                }, { once: true });
+            }
+        }
+
+        function createTipWindow() {
+            if (currentTipsCount >= MAX_TIPS_COUNT) {
+                removeOldestTip();
+            }
+
+            const tipText = getRandomElement(tips);
+            const bgColor = getRandomElement(colors);
+            
+            const tipWindow = document.createElement('div');
+            tipWindow.className = 'tip-window';
+            tipWindow.style.backgroundColor = bgColor;
+
+            const WINDOW_WIDTH = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--tip-width'));
+            const WINDOW_HEIGHT = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--tip-height'));
+            
+            const margin = 10;
+            const maxX = window.innerWidth - WINDOW_WIDTH - margin;
+            const maxY = window.innerHeight - WINDOW_HEIGHT - margin;
+            
+            const randomX = Math.floor(Math.random() * (maxX - margin)) + margin;
+            const randomY = Math.floor(Math.random() * (maxY - margin)) + margin;
+
+            tipWindow.style.left = randomX + 'px';
+            tipWindow.style.top = randomY + 'px';
+
+            tipWindow.innerHTML = `
+                <div class="tip-header">温馨提示</div>
+                <div class="tip-content">${tipText}</div>
+            `;
+
+            tipContainer.appendChild(tipWindow);
+            currentTipsCount++; 
+
+            setTimeout(() => {
+                tipWindow.classList.add('show'); 
+            }, 10); 
+        }
+
+        // --- 主函数：添加音乐播放 ---
+
+        function startGeneration() {
+            if (windowGenerationInterval) return; 
+
+            // 播放音乐
+            bgMusic.play().catch(error => {
+                console.log("无法自动播放音乐，可能需要用户交互:", error);
+                // 浏览器通常限制没有用户交互的自动播放
+            });
+
+            const rect = giftBox.getBoundingClientRect();
+            const centerX = rect.left + rect.width / 2;
+            const centerY = rect.top + rect.height / 2;
+            
+            // 1. 触发爆炸特效
+            explode(centerX, centerY);
+
+            // 2. 隐藏礼盒
+            giftBox.style.opacity = '0';
+            giftBox.style.transform = 'scale(0.5)';
+            setTimeout(() => {
+                giftBox.style.display = 'none';
+            }, 300); 
+
+            // 3. 开始循环生成弹窗
+            setTimeout(() => {
+                windowGenerationInterval = setInterval(() => {
+                    createTipWindow();
+                }, INTERVAL_MS);
+            }, 10);
+        }
+
+        // 页面加载完成后立即生成星星
+        window.addEventListener('load', createStars);
+
+        // 监听礼盒点击事件，开始生成弹窗和音乐
+        giftBox.addEventListener('click', startGeneration);
+        
+    </script>
+</body>
+</html>
